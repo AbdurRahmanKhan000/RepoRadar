@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+<defs>
+<radialGradient id="tile" cx="50%" cy="42%" r="78%"><stop offset="0" stop-color="#1b2452"/><stop offset="0.6" stop-color="#0d1230"/><stop offset="1" stop-color="#080b1e"/></radialGradient>
+<linearGradient id="sweep" gradientUnits="userSpaceOnUse" x1="8" y1="8" x2="12.04" y2="2.23"><stop offset="0" stop-color="#17e6c8" stop-opacity="0.95"/><stop offset="1" stop-color="#17e6c8" stop-opacity="0.05"/></linearGradient>
+<radialGradient id="blip" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#17e6c8" stop-opacity="0.9"/><stop offset="0.45" stop-color="#17e6c8" stop-opacity="0.35"/><stop offset="1" stop-color="#17e6c8" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="16" height="16" rx="3.52" fill="url(#tile)"/>
+<path d="M 8 8 L 8 0.96 A 7.04 7.04 0 0 1 12.04 2.23 Z" fill="url(#sweep)"/>
+<circle cx="8" cy="8" r="7.04" fill="none" stroke="#17e6c8" stroke-width="1.2" opacity="0.95"/>
+<circle cx="8" cy="8" r="3.84" fill="none" stroke="#17e6c8" stroke-width="1.2" opacity="0.7"/>
+<circle cx="11.03" cy="3.67" r="2" fill="url(#blip)"/>
+<circle cx="11.03" cy="3.67" r="1.5" fill="#ffffff"/>
+<circle cx="8" cy="8" r="1.2" fill="#17e6c8"/>
+</svg>
