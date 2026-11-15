@@ -7,8 +7,20 @@ import type { OverviewResult, ProviderErrorData } from '../../src/domain/reposit
 import { APP_NAME } from '../../src/shared/constants';
 import { repoUrl } from '../../src/shared/repo-url';
 import { useTheme } from '../../src/shared/theme';
+import {
+  SAVED_REPOS_STORAGE_KEY,
+  SavedReposStore,
+  type SavedRepoEntry,
+} from '../../src/storage/saved-repos';
 import { LAST_REPO_STORAGE_KEY, type LastRepoRecord } from '../../src/messaging/messages';
 import './App.css';
+
+/** chrome.storage.local behind the KeyValueStore interface the
+ *  SavedReposStore expects. */
+const chromeLocalStore = {
+  get: (key: string) => browser.storage.local.get(key) as Promise<Record<string, unknown>>,
+  set: (items: Record<string, unknown>) => browser.storage.local.set(items),
+};
 
 type ScoreState =
   | { status: 'idle' }
@@ -24,15 +36,29 @@ function App() {
   const { resolved: theme, toggle: toggleTheme } = useTheme();
   const [lastRepo, setLastRepo] = useState<LastRepoRecord | null>(null);
   const [score, setScore] = useState<ScoreState>({ status: 'idle' });
+  const [analysis, setAnalysis] = useState<{
+    overview: OverviewResult;
+    report: RepositoryReport;
+  } | null>(null);
+
+  // 0.3.0 — saved-repo management in the popup: the detected repo
+  // can be saved or removed here, no side panel needed.
+  const [savedRepos, setSavedRepos] = useState<SavedRepoEntry[]>([]);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   useEffect(() => {
     void browser.storage.local.get(LAST_REPO_STORAGE_KEY).then((result) => {
       const record = result[LAST_REPO_STORAGE_KEY] as LastRepoRecord | undefined;
       if (record) setLastRepo(record);
     });
+    const store = new SavedReposStore(chromeLocalStore);
+    void store.load().then(setSavedRepos).catch(() => undefined);
     const onStorage = (changes: Record<string, { newValue?: unknown }>) => {
       const change = changes[LAST_REPO_STORAGE_KEY];
       if (change?.newValue) setLastRepo(change.newValue as LastRepoRecord);
+      if (changes[SAVED_REPOS_STORAGE_KEY]) {
+        void store.load().then(setSavedRepos).catch(() => undefined);
+      }
     };
     browser.storage.onChanged.addListener(onStorage);
     return () => browser.storage.onChanged.removeListener(onStorage);
@@ -45,6 +71,7 @@ function App() {
   useEffect(() => {
     if (!lastRepo) return;
     setScore({ status: 'loading' });
+    setAnalysis(null);
     let cancelled = false;
     void browser.runtime
       .sendMessage({ type: 'ANALYZE_REPOSITORY', owner: lastRepo.owner, repo: lastRepo.repo })
@@ -56,6 +83,7 @@ function App() {
           | undefined;
         if (res?.type === 'ANALYSIS_COMPLETE') {
           setScore({ status: 'ready', report: res.report });
+          setAnalysis({ overview: res.overview, report: res.report });
         } else {
           setScore({ status: 'unavailable' });
         }
@@ -67,6 +95,41 @@ function App() {
       cancelled = true;
     };
   }, [lastRepo]);
+
+  const repoId = lastRepo ? `github:${lastRepo.owner}/${lastRepo.repo}` : null;
+  const isSaved = repoId !== null && savedRepos.some((e) => e.repoId === repoId);
+
+  /** Save the detected repo (needs the loaded score summary) or
+   *  remove it when it is already saved. Updates the row
+   *  immediately; the storage listener keeps it in sync. */
+  const toggleSave = () => {
+    if (!lastRepo || !repoId) return;
+    setSaveMessage(null);
+    const store = new SavedReposStore(chromeLocalStore);
+    if (isSaved) {
+      void store.remove(repoId).then(() => store.load().then(setSavedRepos));
+      return;
+    }
+    if (!analysis) return;
+    const entry: SavedRepoEntry = {
+      repoId,
+      owner: lastRepo.owner,
+      repo: lastRepo.repo,
+      overallScore: analysis.report.overallScore,
+      grade: analysis.report.grade,
+      coverage: analysis.report.coverage,
+      confidence: analysis.report.confidence,
+      fetchedAt: analysis.overview.facts.fetchedAt,
+      savedAt: new Date().toISOString(),
+    };
+    void store.add(entry).then((result) => {
+      if (!result.ok) {
+        setSaveMessage('Saved list is full — remove a repository to save another.');
+        return;
+      }
+      return store.load().then(setSavedRepos);
+    });
+  };
 
   const openAnalysis = () => {
     if (!lastRepo) return;
@@ -166,6 +229,33 @@ function App() {
             <a className="link" href={repoUrl(lastRepo)} target="_blank" rel="noreferrer">
               GitHub ↗
             </a>
+            <div className="saved-row">
+              {isSaved ? (
+                <>
+                  <span className="saved-badge" role="status">
+                    Saved ✓
+                  </span>{' '}
+                  <button type="button" className="btn" onClick={toggleSave}>
+                    Remove
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={toggleSave}
+                  disabled={!analysis}
+                  title={analysis ? 'Save this repository' : 'Save once the score has loaded'}
+                >
+                  Save
+                </button>
+              )}
+            </div>
+            {saveMessage && (
+              <p className="muted small" role="status">
+                {saveMessage}
+              </p>
+            )}
           </>
         ) : (
           <>

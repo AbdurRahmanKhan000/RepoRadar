@@ -149,8 +149,13 @@ const refreshEnabled = await panel.evaluate(() => {
 check('Refresh is enabled in the normal (non-exhausted) state', refreshEnabled);
 
 // (c) Offline unknown repo -> graceful error state (regression).
+// NOTE (0.3.0): wait for 'Technical detail:', not 'Could not reach
+// GitHub' — the seeded report now contains that phrase itself (the
+// supply-chain section reports "Supply-chain risk could not be
+// checked: Could not reach GitHub…"), so the old needle matched the
+// stale report and the check read the wrong card.
 await page.goto('https://github.com/unknown/nope', { waitUntil: 'domcontentloaded' });
-text = await waitForText(panel, 'Could not reach GitHub', 15000);
+text = await waitForText(panel, 'Technical detail:', 15000);
 check('offline unknown repo shows graceful error state', text.includes('Could not reach GitHub') && text.includes('Try again'));
 
 // (d) Fixes 0.2.1: the popup footer line was removed at the

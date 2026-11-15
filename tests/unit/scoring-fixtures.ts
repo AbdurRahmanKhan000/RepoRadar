@@ -62,6 +62,9 @@ export function makeActivity(overrides: Partial<ActivityData> = {}): ActivityDat
       healthPercentage: 100,
     },
     ciWorkflowsPresent: true,
+    // 0.3.0 — 52-week commit activity for the trajectory; null
+    // by default (unknown), tests that need it pass it explicitly.
+    commitActivity: null,
     truncated: {
       contributors: false,
       commits: false,

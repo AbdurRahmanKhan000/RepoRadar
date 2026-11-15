@@ -11,11 +11,20 @@ export default defineConfig({
     name: 'RepoRadar',
     description:
       'Evidence-based repository intelligence for GitHub — transparent maintenance signals, with the evidence behind every score.',
-    version: '0.2.1',
+    version: '0.3.0',
     // 'downloads' (Build 5): report/comparison exports. No other
     // new permission — the extension still only touches GitHub.
     permissions: ['storage', 'sidePanel', 'downloads'],
-    host_permissions: ['https://github.com/*', 'https://api.github.com/*'],
+    // 0.3.0: api.osv.dev (vulnerability database, free, no auth)
+    // and api.deps.dev (dependency release index, free, no auth)
+    // for the supply-chain risk signals. No tokens are sent to
+    // either — only package names + versions being checked.
+    host_permissions: [
+      'https://github.com/*',
+      'https://api.github.com/*',
+      'https://api.osv.dev/*',
+      'https://api.deps.dev/*',
+    ],
     action: {
       default_title: 'RepoRadar',
     },

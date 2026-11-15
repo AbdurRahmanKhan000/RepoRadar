@@ -169,6 +169,9 @@ const fakeProvider = vi.hoisted(() => ({
   getPulls: vi.fn(),
   getCommunityProfile: vi.fn(),
   getCiPresence: vi.fn(),
+  getCommitActivity: vi.fn(),
+  getRepoTree: vi.fn(),
+  getFileContent: vi.fn(),
 }));
 
 vi.mock('../../src/providers/registry', () => ({
@@ -220,6 +223,10 @@ function setupArchived() {
   fakeProvider.getPulls.mockResolvedValue(fetchResult(activity.pulls));
   fakeProvider.getCommunityProfile.mockResolvedValue(fetchResult(activity.communityProfile));
   fakeProvider.getCiPresence.mockResolvedValue(fetchResult(activity.ciWorkflowsPresent));
+  // 0.3.0 — no commit activity and no manifests by default.
+  fakeProvider.getCommitActivity.mockResolvedValue(fetchResult(null));
+  fakeProvider.getRepoTree.mockResolvedValue(fetchResult({ entries: [], truncated: false }));
+  fakeProvider.getFileContent.mockRejectedValue(new ProviderError('NOT_FOUND', 'no file'));
   return new RepositoryService(new InMemoryCache());
 }
 

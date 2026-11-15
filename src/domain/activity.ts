@@ -48,6 +48,17 @@ export interface PullSample {
   closedAt: string | null;
 }
 
+/** One week of commit activity, from GET /repos/{owner}/{repo}/
+ *  stats/commit_activity (0.3.0, trajectory). `week` is the Unix
+ *  timestamp (seconds) of the week start; `total` is the week's
+ *  commit count; `days` is the per-day breakdown (Sunday first).
+ *  The endpoint returns 52 weeks when GitHub has them. */
+export interface CommitActivitySample {
+  week: number;
+  total: number;
+  days: number[];
+}
+
 /** What the community profile endpoint reports as present/absent.
  *  Each flag is a file the repository does or does not have — a
  *  missing file is evidence of absence (score 0 for that signal),
@@ -69,7 +80,8 @@ export type ActivityEndpoint =
   | 'issues'
   | 'pulls'
   | 'communityProfile'
-  | 'ci';
+  | 'ci'
+  | 'commitActivity';
 
 export interface ActivityData {
   contributors: ContributorSample[] | null;
@@ -82,6 +94,10 @@ export interface ActivityData {
    *  file, false = directory missing/empty (404 or empty listing),
    *  null = the check itself failed (unknown, not absent). */
   ciWorkflowsPresent: boolean | null;
+  /** 52-week commit activity for the trajectory (0.3.0). Null when
+   *  the stats endpoint was unavailable (e.g. GitHub still
+   *  computing it, 202) — unknown, never zero. */
+  commitActivity: CommitActivitySample[] | null;
   /** True per endpoint when its page returned exactly its limit —
    *  the sample is capped and may not represent the whole repo. */
   truncated: Record<
@@ -106,6 +122,7 @@ export function emptyActivityData(fetchedAt: string): ActivityData {
     pulls: null,
     communityProfile: null,
     ciWorkflowsPresent: null,
+    commitActivity: null,
     truncated: {
       contributors: false,
       commits: false,
@@ -115,5 +132,41 @@ export function emptyActivityData(fetchedAt: string): ActivityData {
     },
     errors: {},
     fetchedAt,
+  };
+}
+
+/** Normalize a cached ActivityData into the current shape. Cache
+ *  entries written before 0.3.0 have no `commitActivity` key, and
+ *  entries written by an older build may lack other fields — a
+ *  missing field is `undefined`, not null, and downstream code
+ *  that only guards null would crash on it (the 0.3.0 regression
+ *  that broke the Build 4–6 browser checks: `weeks.map` on
+ *  undefined). Every missing sample becomes null (unknown, never
+ *  zero); missing truncation/error maps become the empty defaults.
+ *  The service applies this to every cached activity it reads, so
+ *  no consumer has to defend against old cache shapes. */
+export function normalizeActivityData(value: unknown): ActivityData {
+  const v = (value ?? {}) as Partial<ActivityData>;
+  const empty = emptyActivityData(
+    typeof v.fetchedAt === 'string' ? v.fetchedAt : new Date().toISOString(),
+  );
+  return {
+    contributors: v.contributors ?? null,
+    commits: v.commits ?? null,
+    releases: v.releases ?? null,
+    issues: v.issues ?? null,
+    pulls: v.pulls ?? null,
+    communityProfile: v.communityProfile ?? null,
+    ciWorkflowsPresent: v.ciWorkflowsPresent ?? null,
+    commitActivity: v.commitActivity ?? null,
+    truncated: {
+      contributors: v.truncated?.contributors ?? false,
+      commits: v.truncated?.commits ?? false,
+      releases: v.truncated?.releases ?? false,
+      issues: v.truncated?.issues ?? false,
+      pulls: v.truncated?.pulls ?? false,
+    },
+    errors: v.errors ?? {},
+    fetchedAt: empty.fetchedAt,
   };
 }

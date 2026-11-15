@@ -149,3 +149,55 @@ export const GitHubContentsSchema = z.array(
 );
 
 export type GitHubContents = z.infer<typeof GitHubContentsSchema>;
+
+// --- 0.3.0: commit activity (trajectory), git tree + file
+// contents (supply chain). ---
+
+/** GET /stats/commit_activity: 52 weeks of {total, week (Unix
+ *  seconds), days[7]}. A 202 ("still computing") returns {} —
+ *  that fails this schema on purpose; the provider catches the
+ *  202 and retries once (see provider.ts). */
+export const GitHubCommitActivitySchema = z.array(
+  z
+    .object({
+      total: z.number(),
+      week: z.number(),
+      days: z.array(z.number()),
+    })
+    .passthrough(),
+);
+
+export type GitHubCommitActivity = z.infer<typeof GitHubCommitActivitySchema>;
+
+/** GET /git/trees/{branch}?recursive=1: every path in the repo.
+ *  `truncated` means GitHub capped the listing — manifest
+ *  discovery may have missed files, and the evidence says so. */
+export const GitHubTreeSchema = z
+  .object({
+    tree: z.array(
+      z
+        .object({
+          path: z.string(),
+          type: z.string(),
+          sha: z.string(),
+        })
+        .passthrough(),
+    ),
+    truncated: z.boolean(),
+  })
+  .passthrough();
+
+export type GitHubTree = z.infer<typeof GitHubTreeSchema>;
+
+/** GET /contents/{path} for a single file: base64 content. A
+ *  directory listing (array) fails this schema — the caller
+ *  treats that as an unreadable manifest, not as content. */
+export const GitHubFileContentSchema = z
+  .object({
+    content: z.string(),
+    encoding: z.string(),
+    size: z.number(),
+  })
+  .passthrough();
+
+export type GitHubFileContent = z.infer<typeof GitHubFileContentSchema>;

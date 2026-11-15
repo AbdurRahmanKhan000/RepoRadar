@@ -10,6 +10,7 @@
 // consumes these EvidenceItems, never raw API objects.
 
 import {
+  type CommitActivitySample,
   type CommitSample,
   type CommunityProfileSample,
   type ContributorSample,
@@ -29,23 +30,29 @@ import { parseRepoFromUrl } from '../../shared/repo-url';
 import type { ProviderFetchOptions, ProviderFetchResult, RepoProvider } from '../types';
 import { GitHubApiClient } from './client';
 import {
+  GitHubCommitActivitySchema,
   GitHubCommitsSchema,
   GitHubCommunityProfileSchema,
   GitHubContentsSchema,
   GitHubContributorsSchema,
+  GitHubFileContentSchema,
   GitHubIssuesSchema,
   GitHubLanguagesSchema,
   GitHubPullsSchema,
   GitHubReleasesSchema,
   GitHubRepositorySchema,
+  GitHubTreeSchema,
   type GitHubCommit,
+  type GitHubCommitActivity,
   type GitHubCommunityProfile,
   type GitHubContributor,
   type GitHubContents,
+  type GitHubFileContent,
   type GitHubIssue,
   type GitHubPull,
   type GitHubRelease,
   type GitHubRepository,
+  type GitHubTree,
 } from './schemas';
 
 export const GITHUB_REPO_SOURCE = 'GET /repos/{owner}/{repo}';
@@ -174,6 +181,34 @@ export function normalizeCommunityProfile(api: GitHubCommunityProfile): Communit
  *  at least one entry. An empty directory means no workflows. */
 export function normalizeCiPresence(api: GitHubContents): boolean {
   return api.length > 0;
+}
+
+// --- 0.3.0 normalizers: commit activity, git tree, file content. ---
+
+export function normalizeCommitActivity(api: GitHubCommitActivity): CommitActivitySample[] {
+  return api.map((w) => ({ week: w.week, total: w.total, days: w.days }));
+}
+
+export function normalizeTree(api: GitHubTree): {
+  entries: { path: string; type: string }[];
+  truncated: boolean;
+} {
+  return {
+    entries: api.tree.map((e) => ({ path: e.path, type: e.type })),
+    truncated: api.truncated,
+  };
+}
+
+/** Decode a contents-API base64 payload to text. The API wraps
+ *  lines at 60 columns, so whitespace is stripped first. */
+export function decodeFileContent(api: GitHubFileContent): string {
+  const clean = api.content.replace(/\s/g, '');
+  const bytes = Uint8Array.from(atob(clean), (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class GitHubProvider implements RepoProvider {
@@ -366,5 +401,94 @@ export class GitHubProvider implements RepoProvider {
       }
       throw error;
     }
+  }
+
+  async getCommitActivity(
+    ref: RepoRef,
+    options: ProviderFetchOptions = {},
+  ): Promise<ProviderFetchResult<CommitActivitySample[] | null>> {
+    // GitHub computes these stats on demand: the first call often
+    // answers 202 with an empty body ("still computing"). The
+    // client surfaces that as INVALID_RESPONSE with status 202
+    // (the {} body fails the array schema on purpose). Retry once
+    // after 3 s; if it is still computing, the sample is unknown
+    // (data null) — never zero, never an error for the whole report.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await this.client.request(
+          this.repoPath(ref, '/stats/commit_activity'),
+          GitHubCommitActivitySchema,
+          options,
+        );
+        return {
+          data: normalizeCommitActivity(res.data),
+          etag: res.etag,
+          rateLimit: res.rateLimit,
+          notModified: false,
+          fetchedAt: res.fetchedAt,
+        };
+      } catch (error) {
+        const stillComputing =
+          error instanceof ProviderError && error.code === 'INVALID_RESPONSE' && error.status === 202;
+        if (!stillComputing) throw error;
+        if (attempt === 0) {
+          await sleep(3000);
+          continue;
+        }
+        return {
+          data: null,
+          etag: null,
+          rateLimit: error.rateLimit,
+          notModified: false,
+          fetchedAt: new Date().toISOString(),
+        };
+      }
+    }
+    // Unreachable: the loop returns or throws on every path.
+    throw new ProviderError('UNKNOWN', 'Commit activity could not be collected.');
+  }
+
+  async getRepoTree(
+    ref: RepoRef,
+    branch: string,
+    options: ProviderFetchOptions = {},
+  ): Promise<
+    ProviderFetchResult<{ entries: { path: string; type: string }[]; truncated: boolean }>
+  > {
+    const res = await this.client.request(
+      this.repoPath(ref, `/git/trees/${encodeURIComponent(branch)}?recursive=1`),
+      GitHubTreeSchema,
+      options,
+    );
+    return {
+      data: normalizeTree(res.data),
+      etag: res.etag,
+      rateLimit: res.rateLimit,
+      notModified: false,
+      fetchedAt: res.fetchedAt,
+    };
+  }
+
+  async getFileContent(
+    ref: RepoRef,
+    path: string,
+    options: ProviderFetchOptions = {},
+  ): Promise<ProviderFetchResult<string>> {
+    const encoded = path
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    const res = await this.client.request(
+      this.repoPath(ref, `/contents/${encoded}`),
+      GitHubFileContentSchema,
+      options,
+    );
+    return {
+      data: decodeFileContent(res.data),
+      etag: res.etag,
+      rateLimit: res.rateLimit,
+      notModified: false,
+      fetchedAt: res.fetchedAt,
+    };
   }
 }

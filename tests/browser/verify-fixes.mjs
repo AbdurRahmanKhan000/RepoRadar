@@ -156,8 +156,13 @@ const panelText = await panel.evaluate(() => document.body.innerText);
 check('seeded report still scores 94.3', panelText.includes('94.3'));
 
 // --- (c) Offline NETWORK_ERROR card: detail + Test connection. ---
+// NOTE (0.3.0): wait for 'Technical detail:', not 'Could not reach
+// GitHub' — the seeded huge-repo report now contains that phrase
+// itself (the supply-chain section reports "Supply-chain risk could
+// not be checked: Could not reach GitHub…"), so the old needle
+// matched the stale report and the checks below read the wrong card.
 await page.goto('https://github.com/unknown/nope', { waitUntil: 'domcontentloaded' });
-let text = await waitForText(panel, 'Could not reach GitHub', 30000);
+let text = await waitForText(panel, 'Technical detail:', 30000);
 check('offline unknown repo shows the network error card', text.includes('Could not reach GitHub'));
 check('error card shows a technical detail line', text.includes('Technical detail:'));
 check('error card names the raw fetch failure', /Failed to fetch/.test(text));

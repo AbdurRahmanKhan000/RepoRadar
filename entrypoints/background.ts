@@ -86,10 +86,11 @@ export default defineBackground(() => {
           // provider); the registry is the single place that knows.
           const provider = getProviderForHost('github.com');
           const ref: RepoRef = { platform: provider.platform, host: 'github.com', owner, repo };
-          const { overview, report, activity } = await service.getReport(ref, {
-            forceRefresh: Boolean(forceRefresh),
-          });
-          sendResponse({ type: 'ANALYSIS_COMPLETE', overview, report, activity });
+          const { overview, report, activity, trajectory, supplyChain, verdict } =
+            await service.getReport(ref, {
+              forceRefresh: Boolean(forceRefresh),
+            });
+          sendResponse({ type: 'ANALYSIS_COMPLETE', overview, report, activity, trajectory, supplyChain, verdict });
         } catch (error) {
           if (error instanceof ProviderError) {
             sendResponse({
@@ -109,6 +110,20 @@ export default defineBackground(() => {
             detail: error instanceof Error ? `${error.name}: ${error.message}` : null,
           });
         }
+      })();
+      return true;
+    }
+
+    if (type === 'RETRY_SUPPLY_CHAIN') {
+      // 0.3.0 — retry just the supply-chain section (fresh OSV /
+      // deps.dev lookups, cache bypassed). Never throws: the
+      // service returns an 'unknown' result on failure.
+      const { owner, repo, branch } = message as { owner: string; repo: string; branch: string };
+      void (async () => {
+        const provider = getProviderForHost('github.com');
+        const ref: RepoRef = { platform: provider.platform, host: 'github.com', owner, repo };
+        const supplyChain = await service.getSupplyChain(ref, { forceRefresh: true }, branch, Date.now());
+        sendResponse({ type: 'SUPPLY_CHAIN_RESULT', supplyChain });
       })();
       return true;
     }

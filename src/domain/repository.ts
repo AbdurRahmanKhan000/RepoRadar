@@ -130,6 +130,14 @@ export interface ProviderErrorData {
   detail: string | null;
 }
 
+/** Convert a ProviderError to its message-safe form. Lives here
+ *  (not in the service) so the supply-chain service can use it
+ *  without importing the repository service — that would be a
+ *  circular import. */
+export function toErrorData(error: ProviderError): ProviderErrorData {
+  return { code: error.code, message: error.message, status: error.status, detail: error.detail };
+}
+
 /** What the side panel renders for one repository (Build 2). */
 export interface OverviewResult {
   ref: RepoRef;

@@ -17,6 +17,9 @@ Open any public repository on GitHub and RepoRadar shows you, at a glance:
 - **A health score from 0–100**, with a grade from A to F
 - **Six scored categories** — maintenance, community, issues & PRs, releases, documentation, and adoption
 - **The evidence behind every number** — the exact value, where it came from, and when it was observed
+- **Supply-chain risk signals** — checks the repo's direct dependencies for known vulnerabilities and abandoned packages, using the free OSV database and deps.dev
+- **Trajectory & forecast** — 52 weeks of commit history show whether the project is growing, stable, or declining, with a 3-month projection
+- **A verdict, not just a score** — "Use it", "Use with caution", or "Stay away", with every reason linked to the proof behind it
 - **Commit activity and language breakdown** as charts
 - **Save, compare and export** — keep up to 50 repositories, compare up to 3 side by side, and export a report as JSON or Markdown
 

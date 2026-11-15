@@ -2,6 +2,12 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { ActivityData } from '../../src/domain/activity';
 import { gradeLabel } from '../../src/analysis/scoring';
+import {
+  classificationLabel,
+  slopeWords,
+  type TrajectoryResult,
+} from '../../src/analysis/trajectory';
+import type { Verdict, VerdictReason } from '../../src/analysis/verdict';
 import type { ConnectionProbeResult } from '../../src/diagnostics/connection';
 import type { CategoryScore, RepositoryReport } from '../../src/domain/report';
 import type { OverviewResult, ProviderErrorData } from '../../src/domain/repository';
@@ -14,6 +20,8 @@ import { toReportJson } from '../../src/export/json';
 import { compareToMarkdown, reportToMarkdown } from '../../src/export/markdown';
 import { repoUrl } from '../../src/shared/repo-url';
 import { useTheme } from '../../src/shared/theme';
+import { riskLabelText } from '../../src/supply-chain/scoring';
+import type { SupplyChainData } from '../../src/supply-chain/types';
 import {
   MAX_SAVED_REPOS,
   SAVED_REPOS_STORAGE_KEY,
@@ -32,11 +40,20 @@ import './App.css';
 const ScoreGauge = lazy(() => import('./charts').then((m) => ({ default: m.ScoreGauge })));
 const ActivityChart = lazy(() => import('./charts').then((m) => ({ default: m.ActivityChart })));
 const LanguageDonut = lazy(() => import('./charts').then((m) => ({ default: m.LanguageDonut })));
+const TrajectoryChart = lazy(() => import('./charts').then((m) => ({ default: m.TrajectoryChart })));
 
 type PanelState =
   | { status: 'idle' }
   | { status: 'loading'; repo: LastRepoRecord }
-  | { status: 'ready'; overview: OverviewResult; report: RepositoryReport; activity: ActivityData }
+  | {
+      status: 'ready';
+      overview: OverviewResult;
+      report: RepositoryReport;
+      activity: ActivityData;
+      trajectory: TrajectoryResult;
+      supplyChain: SupplyChainData;
+      verdict: Verdict;
+    }
   | { status: 'error'; repo: LastRepoRecord; error: ProviderErrorData; rateLimitReset: string | null };
 
 type CompareViewState =
@@ -128,7 +145,15 @@ function App() {
       .sendMessage({ type: 'ANALYZE_REPOSITORY', owner: repo.owner, repo: repo.repo, forceRefresh })
       .then((response: unknown) => {
         const res = response as
-          | { type: 'ANALYSIS_COMPLETE'; overview: OverviewResult; report: RepositoryReport; activity: ActivityData }
+          | {
+              type: 'ANALYSIS_COMPLETE';
+              overview: OverviewResult;
+              report: RepositoryReport;
+              activity: ActivityData;
+              trajectory: TrajectoryResult;
+              supplyChain: SupplyChainData;
+              verdict: Verdict;
+            }
           | { type: 'ANALYSIS_ERROR'; code: ProviderErrorData['code']; message: string; detail?: string | null }
           | undefined;
         if (!res) {
@@ -141,7 +166,15 @@ function App() {
           return;
         }
         if (res.type === 'ANALYSIS_COMPLETE') {
-          setState({ status: 'ready', overview: res.overview, report: res.report, activity: res.activity });
+          setState({
+            status: 'ready',
+            overview: res.overview,
+            report: res.report,
+            activity: res.activity,
+            trajectory: res.trajectory,
+            supplyChain: res.supplyChain,
+            verdict: res.verdict,
+          });
         } else {
           setState({
             status: 'error',
@@ -160,6 +193,38 @@ function App() {
         });
       });
   }, []);
+
+  /** 0.3.0 — retry just the supply-chain check (fresh OSV /
+   *  deps.dev lookups) and merge the result into the ready state.
+   *  The verdict is not recomputed here: a retried supply chain
+   *  could change it, so the retry also re-runs the analysis
+   *  cache-first — which is cheap, because the report itself is
+   *  cached. Simpler and always consistent: retry = full refresh
+   *  of the supply chain + a cache-first re-analysis. */
+  const [supplyChainRetrying, setSupplyChainRetrying] = useState(false);
+  const retrySupplyChain = useCallback(() => {
+    if (state.status !== 'ready' || !lastRepo) return;
+    setSupplyChainRetrying(true);
+    const repo = lastRepo;
+    void browser.runtime
+      .sendMessage({
+        type: 'RETRY_SUPPLY_CHAIN',
+        owner: repo.owner,
+        repo: repo.repo,
+        branch: state.overview.facts.defaultBranch,
+      })
+      .then((response: unknown) => {
+        const res = response as
+          | { type: 'SUPPLY_CHAIN_RESULT'; supplyChain: SupplyChainData }
+          | undefined;
+        setSupplyChainRetrying(false);
+        if (res?.type !== 'SUPPLY_CHAIN_RESULT') return;
+        // Re-run the analysis cache-first so the verdict is
+        // recomputed against the fresh supply-chain data.
+        analyze(repo, false);
+      })
+      .catch(() => setSupplyChainRetrying(false));
+  }, [state, lastRepo, analyze]);
 
   /** Probe api.github.com + github.com from the background worker
    *  and show the raw outcome per host. A blocked API host shows
@@ -258,7 +323,40 @@ function App() {
   const overview = state.status === 'ready' ? state.overview : null;
   const report = state.status === 'ready' ? state.report : null;
   const activity = state.status === 'ready' ? state.activity : null;
+  const trajectory = state.status === 'ready' ? state.trajectory : null;
+  const supplyChain = state.status === 'ready' ? state.supplyChain : null;
+  const verdict = state.status === 'ready' ? state.verdict : null;
   const facts = overview?.facts ?? null;
+
+  /** 0.3.0 — a verdict reason opens the evidence behind it:
+   *  a category key opens that category's evidence drawer; a
+   *  section key scrolls to the section that holds the evidence. */
+  const openReason = useCallback(
+    (reason: VerdictReason, trigger: HTMLButtonElement) => {
+      if (!report) return;
+      const categoryKeys = ['maintenance', 'community', 'issues', 'releases', 'docs', 'adoption'];
+      if (categoryKeys.includes(reason.evidenceKey)) {
+        const category = report.categories.find((c) => c.key === reason.evidenceKey);
+        if (category) {
+          openDrawer(category, trigger);
+          return;
+        }
+      }
+      const sectionIds: Record<string, string> = {
+        supplyChain: 'supply-chain-section',
+        trajectory: 'trajectory-section',
+        coverage: 'score-section',
+        overallScore: 'score-section',
+        daysSincePush: 'overview-section',
+        daysSinceLatestRelease: 'overview-section',
+        archived: 'overview-section',
+        openIssueAge: 'categories-section',
+      };
+      const id = sectionIds[reason.evidenceKey] ?? 'evidence-section';
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [report, openDrawer],
+  );
 
   // Refresh forces a live request, so it is disabled while the rate
   // limit is exhausted (or the last load failed on it). "Try again"
@@ -625,8 +723,36 @@ function App() {
             </p>
           )}
 
+          {/* 0.3.0 — verdict banner: the adoption signal, above
+              the gauge. Every reason is a button that opens the
+              evidence behind it. */}
+          {verdict && (
+            <section
+              className={`card verdict-card verdict-${verdict.label}`}
+              aria-label="Adoption verdict"
+              id="verdict-section"
+            >
+              <p className="verdict-label">{verdict.title}</p>
+              <p className="muted small">{verdict.subtitle}</p>
+              <ul className="verdict-reasons">
+                {verdict.reasons.map((reason) => (
+                  <li key={reason.text}>
+                    <button
+                      type="button"
+                      className="verdict-reason"
+                      onClick={(event) => openReason(reason, event.currentTarget)}
+                      title="Show the evidence behind this reason"
+                    >
+                      {reason.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {report && (
-            <section className="card score-card" aria-label="Repository health score">
+            <section className="card score-card" aria-label="Repository health score" id="score-section">
               {report.provisional ? (
                 <>
                   <p className="banner provisional" role="status">
@@ -664,6 +790,95 @@ function App() {
                   {report.scoreModelVersion}
                 </p>
               )}
+              <div className="actions" aria-label="Save, compare and export this report">
+                <button type="button" className="btn" onClick={toggleSaveCurrent}>
+                  {isCurrentSaved ? 'Saved ✓ — Remove' : 'Save this repo'}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => currentRepoId && toggleCompare(currentRepoId)}
+                  aria-pressed={currentRepoId !== null && compareSelected.includes(currentRepoId)}
+                >
+                  {currentRepoId !== null && compareSelected.includes(currentRepoId)
+                    ? 'In comparison ✓'
+                    : 'Add to compare'}
+                </button>
+                <button type="button" className="btn" onClick={() => exportCurrent('json')} disabled={exportBusy}>
+                  Download JSON
+                </button>
+                <button type="button" className="btn" onClick={() => exportCurrent('md')} disabled={exportBusy}>
+                  Download Markdown
+                </button>
+              </div>
+              {saveMessage && (
+                <p className="muted small" role="status">
+                  {saveMessage}
+                </p>
+              )}
+              {exportError && (
+                <p className="error-title small" role="alert">
+                  Export failed: {exportError}
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* 0.3.0 — Trajectory: 52 weeks of commit activity,
+              trend line, and the 3-month projection. */}
+          {trajectory && (
+            <section className="card" aria-label="Trajectory and forecast" id="trajectory-section">
+              <h3>Trajectory</h3>
+              {trajectory.status === 'ok' ? (
+                <>
+                  <p>
+                    <strong>{classificationLabel(trajectory.classification)}</strong>
+                    {' — '}
+                    {slopeWords(trajectory.slope)}
+                  </p>
+                  <Suspense fallback={<div className="skeleton skeleton-chart" aria-hidden="true" />}>
+                    <TrajectoryChart trajectory={trajectory} />
+                  </Suspense>
+                  <p className="muted small">
+                    {trajectory.momentum === null
+                      ? 'Momentum could not be measured — there is no earlier activity to compare against.'
+                      : trajectory.momentum === Number.POSITIVE_INFINITY
+                        ? 'Activity restarted after a quiet period.'
+                        : `Recent activity is ${trajectory.momentum}× the previous two months.`}
+                  </p>
+                  <p className="muted small">
+                    If this continues, about {trajectory.forecastWeekly} commits a week in 3
+                    months. This is a linear projection, not a promise.
+                  </p>
+                  <p className="muted small">
+                    Releases per quarter (last 12 months):{' '}
+                    {trajectory.releaseCadence.quarters.join(', ')} — trend{' '}
+                    {trajectory.releaseCadence.trend === 'none'
+                      ? 'none (no releases in 12 months)'
+                      : trajectory.releaseCadence.trend}
+                    .
+                  </p>
+                </>
+              ) : trajectory.status === 'insufficient' ? (
+                <p className="muted small">
+                  Not enough weekly data to measure a trend yet — fewer than 12 weeks of commit
+                  activity.
+                </p>
+              ) : (
+                <p className="muted small">
+                  Commit history trend could not be collected — GitHub&apos;s activity stats were
+                  unavailable.
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* 0.3.0 — Categories now live in their own section,
+              after the trajectory (Verdict → gauge → Trajectory →
+              categories → Supply chain → observations → evidence). */}
+          {report && (
+            <section className="card" aria-label="Category scores" id="categories-section">
+              <h3>Categories</h3>
               <ul className="category-rows" aria-label="Category scores — select a category to see its evidence">
                 {report.categories.map((category) => (
                   <li key={category.key}>
@@ -695,36 +910,90 @@ function App() {
                   ))}
                 </ul>
               )}
-              <div className="actions" aria-label="Save, compare and export this report">
-                <button type="button" className="btn" onClick={toggleSaveCurrent}>
-                  {isCurrentSaved ? 'Saved ✓ — Remove' : 'Save this repo'}
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => currentRepoId && toggleCompare(currentRepoId)}
-                  aria-pressed={currentRepoId !== null && compareSelected.includes(currentRepoId)}
-                >
-                  {currentRepoId !== null && compareSelected.includes(currentRepoId)
-                    ? 'In comparison ✓'
-                    : 'Add to compare'}
-                </button>
-                <button type="button" className="btn" onClick={() => exportCurrent('json')} disabled={exportBusy}>
-                  Download JSON
-                </button>
-                <button type="button" className="btn" onClick={() => exportCurrent('md')} disabled={exportBusy}>
-                  Download Markdown
-                </button>
-              </div>
-              {saveMessage && (
-                <p className="muted small" role="status">
-                  {saveMessage}
+            </section>
+          )}
+
+          {/* 0.3.0 — Supply chain: dependency risk signals. This
+              never changes the health score — it feeds the verdict. */}
+          {supplyChain && (
+            <section className="card" aria-label="Supply-chain risk" id="supply-chain-section">
+              <h3>Supply chain</h3>
+              {supplyChain.status === 'no-manifest' && (
+                <p className="muted">
+                  No supported dependency manifest found in this repository.
                 </p>
               )}
-              {exportError && (
-                <p className="error-title small" role="alert">
-                  Export failed: {exportError}
-                </p>
+              {supplyChain.status === 'unknown' && (
+                <>
+                  <p className="muted">
+                    Supply-chain risk could not be checked
+                    {supplyChain.error ? `: ${supplyChain.error.message}` : '.'}
+                  </p>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={retrySupplyChain}
+                      disabled={supplyChainRetrying}
+                    >
+                      {supplyChainRetrying ? 'Checking…' : 'Retry supply-chain check'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {supplyChain.status === 'ok' && supplyChain.riskScore !== null && supplyChain.riskLabel && (
+                <>
+                  <p>
+                    <strong>Risk: {riskLabelText(supplyChain.riskLabel)}</strong>
+                    {' · '}
+                    {supplyChain.riskScore} / 100
+                  </p>
+                  <p className="muted small">
+                    {supplyChain.depsScanned} dependencies scanned · {supplyChain.vulnerableDeps}{' '}
+                    vulnerable · {supplyChain.totalVulnerabilities} vulnerabilities ·{' '}
+                    {supplyChain.abandonedDeps === null
+                      ? 'abandoned count unknown'
+                      : `${supplyChain.abandonedDeps} abandoned`}
+                  </p>
+                  {supplyChain.manifests.length > 0 && (
+                    <p className="muted small">
+                      Manifests: {supplyChain.manifests.map((m) => m.path).join(', ')}
+                      {supplyChain.hasLockfile ? ' · lockfile present' : ' · no lockfile'}
+                      {supplyChain.truncated ? ' · dependency list capped at 50' : ''}
+                    </p>
+                  )}
+                  {supplyChain.vulnerabilities.length > 0 && (
+                    <ul className="vuln-list">
+                      {supplyChain.vulnerabilities.map((vuln) => (
+                        <li key={`${vuln.ecosystem}:${vuln.packageName}:${vuln.id}`} className="vuln-item">
+                          <strong>
+                            {vuln.packageName}
+                            {vuln.version ? `@${vuln.version}` : ''}
+                          </strong>
+                          {' — '}
+                          {vuln.id}{' '}
+                          <span className={`sev-badge sev-${vuln.severity}`}>
+                            {vuln.severity === 'unknown'
+                              ? 'Unknown severity'
+                              : vuln.severity.charAt(0).toUpperCase() + vuln.severity.slice(1)}
+                            {vuln.cvssScore !== null ? ` · CVSS ${vuln.cvssScore}` : ''}
+                          </span>
+                          <p className="muted small">{vuln.summary}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {supplyChain.vulnerabilities.length === 0 && (
+                    <p className="muted small">
+                      No known vulnerabilities in the dependencies checked. Versions checked are
+                      the minimum of each declared range — the installed version may be newer.
+                    </p>
+                  )}
+                  <p className="muted small">
+                    Sources: OSV vulnerability database + deps.dev + git tree · observed{' '}
+                    {new Date(supplyChain.fetchedAt).toLocaleString()}
+                  </p>
+                </>
               )}
             </section>
           )}
@@ -786,7 +1055,7 @@ function App() {
             </section>
           )}
 
-          <section className="card" aria-label="Repository overview">
+          <section className="card" aria-label="Repository overview" id="overview-section">
             <h2>
               <a href={repoUrl({ owner: facts.owner, repo: facts.name })} target="_blank" rel="noreferrer">
                 {facts.owner}/{facts.name}
@@ -843,7 +1112,7 @@ function App() {
             )}
           </section>
 
-          <section className="card" aria-label="Evidence and rate limit">
+          <section className="card" aria-label="Evidence and rate limit" id="evidence-section">
             <h3>Evidence</h3>
             <p className="muted small">
               Fetched {new Date(facts.fetchedAt).toLocaleString()} from api.github.com · Score model

@@ -139,3 +139,37 @@
   color: var(--accent-text);
   font-size: var(--text-md);
 }
+
+/* 0.3.0 — saved-repo row: "Saved ✓" + Remove, or a Save button. */
+.saved-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.saved-badge {
+  font-weight: 700;
+  font-size: var(--text-md);
+  color: var(--good-text);
+}
+
+.btn {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 600 var(--text-sm) / 1.4 var(--font-stack);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

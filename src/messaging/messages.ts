@@ -12,6 +12,9 @@ import type { ActivityData } from '../domain/activity';
 import type { ConnectionProbeResult } from '../diagnostics/connection';
 import type { RepositoryReport } from '../domain/report';
 import type { OverviewResult, ProviderErrorCode } from '../domain/repository';
+import type { TrajectoryResult } from '../analysis/trajectory';
+import type { Verdict } from '../analysis/verdict';
+import type { SupplyChainData } from '../supply-chain/types';
 import type { RepoContext } from '../shared/repo-url';
 
 export type RepoId = `${string}/${string}`;
@@ -21,10 +24,22 @@ export type ExtensionMessage =
   | { type: 'OPEN_PANEL'; owner: string; repo: string }
   | { type: 'ANALYZE_REPOSITORY'; owner: string; repo: string; forceRefresh?: boolean }
   | { type: 'ANALYSIS_PROGRESS'; repoId: RepoId; stage: string }
-  | { type: 'ANALYSIS_COMPLETE'; overview: OverviewResult; report: RepositoryReport; activity: ActivityData }
+  | {
+      type: 'ANALYSIS_COMPLETE';
+      overview: OverviewResult;
+      report: RepositoryReport;
+      activity: ActivityData;
+      trajectory: TrajectoryResult;
+      supplyChain: SupplyChainData;
+      verdict: Verdict;
+    }
   | { type: 'ANALYSIS_ERROR'; repoId: RepoId; code: ProviderErrorCode; message: string; detail?: string | null }
   | { type: 'TEST_CONNECTION' }
-  | { type: 'TEST_CONNECTION_RESULT'; results: ConnectionProbeResult[] };
+  | { type: 'TEST_CONNECTION_RESULT'; results: ConnectionProbeResult[] }
+  // 0.3.0 — retry just the supply-chain check (fresh OSV /
+  // deps.dev lookups) without re-running the whole analysis.
+  | { type: 'RETRY_SUPPLY_CHAIN'; owner: string; repo: string; branch: string }
+  | { type: 'SUPPLY_CHAIN_RESULT'; supplyChain: SupplyChainData };
 
 export function repositoryContextMessage(
   context: RepoContext,

@@ -11,6 +11,7 @@
 // segment string, not a single GitHub-style login.
 
 import type {
+  CommitActivitySample,
   CommitSample,
   CommunityProfileSample,
   ContributorSample,
@@ -115,5 +116,34 @@ export interface RepoProvider {
     ref: RepoRef,
     options?: ProviderFetchOptions,
   ): Promise<ProviderFetchResult<boolean>>;
+
+  // --- 0.3.0: trajectory + supply chain. Same failure contract
+  // as the activity endpoints: a failure means "that sample is
+  // unknown", never a reason to fail the whole report.
+
+  /** 52 weeks of commit activity for the trajectory. Data is
+   *  null when GitHub is still computing the stats (202, retried
+   *  once by the provider) — unknown, never zero. */
+  getCommitActivity(
+    ref: RepoRef,
+    options?: ProviderFetchOptions,
+  ): Promise<ProviderFetchResult<CommitActivitySample[] | null>>;
+
+  /** Recursive git tree for the default branch (manifest
+   *  discovery). `truncated` is true when GitHub capped the
+   *  listing. */
+  getRepoTree(
+    ref: RepoRef,
+    branch: string,
+    options?: ProviderFetchOptions,
+  ): Promise<ProviderFetchResult<{ entries: { path: string; type: string }[]; truncated: boolean }>>;
+
+  /** Decoded text content of one file (a manifest). A directory
+   *  at that path, or an unreadable response, throws. */
+  getFileContent(
+    ref: RepoRef,
+    path: string,
+    options?: ProviderFetchOptions,
+  ): Promise<ProviderFetchResult<string>>;
 }
 

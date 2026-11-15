@@ -6,10 +6,11 @@
 // labelled region with a text equivalent — a chart never carries
 // information that exists only as colour or shape.
 
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, Tooltip, XAxis, YAxis } from 'recharts';
 
 import type { ActivityData, CommitSample } from '../../src/domain/activity';
 import type { LanguageBreakdown } from '../../src/domain/repository';
+import type { TrajectoryResult } from '../../src/analysis/trajectory';
 
 /** Distinct, colour-blind-friendlier palette for chart slices/bars.
  *  Colour is decorative here: every chart has a text legend. */
@@ -171,6 +172,51 @@ export function LanguageDonut({ languages }: { languages: LanguageBreakdown }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** 52-week trajectory chart — 0.3.0. Weekly commit bars with the
+ *  least-squares trend line overlaid. The text next to the chart
+ *  (in App.tsx) carries the trend label, slope and forecast — the
+ *  chart never carries information that exists only as shape. */
+export function TrajectoryChart({ trajectory }: { trajectory: TrajectoryResult }) {
+  const data = trajectory.weeks.map((w, i) => ({
+    week: new Date(w.week * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    commits: w.total,
+    trend: trajectory.trendLine[i] ?? null,
+  }));
+  const total = data.reduce((sum, d) => sum + d.commits, 0);
+  return (
+    <div
+      className="activity-chart"
+      role="img"
+      aria-label={`Weekly commits over the last ${trajectory.weeksUsed} weeks, ${total} commits in total, with the trend line`}
+    >
+      <ComposedChart width={320} height={150} data={data} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+        <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+        <XAxis dataKey="week" tick={{ fontSize: 10, fill: 'var(--muted)' }} interval={7} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+        <Tooltip
+          formatter={(value, name) => [
+            `${value} commits`,
+            name === 'trend' ? 'Trend line' : 'Commits',
+          ]}
+          labelFormatter={(label) => `Week of ${label}`}
+        />
+        <Bar dataKey="commits" fill="#58a6ff" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+        <Line
+          type="linear"
+          dataKey="trend"
+          stroke="#17e6c8"
+          strokeWidth={2}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </ComposedChart>
+      <p className="muted small chart-note">
+        {total} commits over {trajectory.weeksUsed} weeks (GitHub commit activity).
+      </p>
     </div>
   );
 }

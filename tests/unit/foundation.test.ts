@@ -11,9 +11,9 @@ describe('RepoRadar foundation constants', () => {
     expect(APP_NAME).toBe('RepoRadar');
   });
 
-  it('is on Build 6, version 0.2.1', () => {
+  it('is on Build 6, version 0.3.0', () => {
     expect(BUILD_LABEL).toBe('Build 6');
-    expect(APP_VERSION).toBe('0.2.1');
+    expect(APP_VERSION).toBe('0.3.0');
   });
 
   it('pins the scoring model version from spec §6.1', () => {

@@ -1,5 +1,87 @@
 # Changelog
 
+## 0.3.0 — "Trust" release — 2026-11-15
+
+Three new features, one principle: the 0–100 health score (model
+1.0.0) does NOT change. Supply chain and trajectory feed the
+verdict only — the score is computed exactly as before.
+
+- **Supply-chain risk signals** (`src/supply-chain/`): one git-tree
+  request finds root manifests (package.json, requirements.txt,
+  go.mod, Cargo.toml, Gemfile — cap 5); direct dependencies only
+  (cap 50). One OSV querybatch checks every pinned version for
+  known vulnerabilities (CVE/GHSA id, CVSS severity, summary).
+  deps.dev (cap 10) flags dependencies whose latest release is
+  older than 24 months. Deterministic risk score 0–100 (model
+  1.0.0): Critical −25, High −15, Medium −7, Low −3 (vuln total
+  capped −60; unknown severity counts as Medium), abandoned −5
+  each (cap −20), npm without a lockfile −5. Labels Low ≥80,
+  Moderate 60–79, Elevated 40–59, High <40. Missing data is
+  unknown, never 0; the language is "supply-chain risk signals",
+  never "secure" or "safe". Cached 45 min. New host permissions:
+  api.osv.dev and api.deps.dev (free, no auth, no tokens sent).
+  Live-shape fixes found by the real-API checks (2026-11-15):
+  the OSV batch reply carries only the id, so each vulnerability
+  is enriched with a detail fetch (GET /v1/vulns/{id}, cap 20,
+  parallel, failure-isolated) for its real severity + summary;
+  severity comes from the CVSS 3.1 vector scored by the FIRST.org
+  base formula (`src/supply-chain/cvss.ts`, unit-tested against
+  NVD-published scores: CVE-2020-8203 7.4, CVE-2020-28500 5.3,
+  Log4Shell 10.0), falling back to the advisory's
+  database_specific severity word; deps.dev nests the version
+  under versionKey.version, which the schema now reads (the
+  first schema missed it, so every abandonment lookup failed
+  against the real API while the mocked tests passed). A third
+  live-shape lesson from the browser rerun: activity entries
+  cached by 0.2.x have no `commitActivity` key, so the
+  trajectory's strict `=== null` guard let `undefined` reach
+  `.map` and crash the whole report — `analyzeTrajectory` /
+  `releaseCadence` now accept `undefined`, and the service
+  normalizes every cached activity to the current shape
+  (`normalizeActivityData`), with regression tests for both.
+- **Trajectory & forecast** (`src/analysis/trajectory.ts`): one
+  request for 52 weeks of commit activity (HTTP 202 retried once
+  after 3 s, then unknown). Least-squares slope, momentum (last 4
+  weeks vs prior 8), classification Growing / Declining / Stable /
+  Insufficient, and a 12-week linear forecast ("If this continues,
+  about X commits a week in 3 months" — labelled a projection,
+  never a promise). Release cadence per quarter from the
+  already-fetched releases sample, shown next to the chart.
+- **Verdict** (`src/analysis/verdict.ts`, model 1.0.0): a
+  deterministic rule engine over the score, coverage, trajectory,
+  supply chain, push/release recency and issue age. "Use it" /
+  "Use with caution" / "Stay away" / "Not enough data" (provisional),
+  each with an ordered list of reasons citing the exact evidence
+  key — clicking a reason opens the category drawer or scrolls to
+  the section. Wording: "Adoption signal based on public
+  repository evidence". When the supply-chain check fails, "Use
+  it" is withheld (vulnerabilities cannot be confirmed absent);
+  when there is no manifest, there is nothing to check.
+- **Popup saved-repo management**: the popup shows "Saved ✓" +
+  Remove for a saved repo, or a Save button (enabled once the
+  score summary loads). No contextMenus permission.
+- **UI/UX**: panel order is now Verdict → score gauge → Trajectory
+  → categories → Supply chain → observations → evidence. Skeletons
+  for new sections, clear "unknown" states (never blank).
+  `docs/images/panel-preview.svg` redrawn with the verdict banner
+  and new sections. README features section updated.
+- **Request budget** (fresh, no cache): GitHub at most 16
+  (repo 1 + languages 1 + activity 7 + commit_activity 1 + tree 1
+  + manifests ≤ 5) of the 60/hour unauthenticated budget; OSV 1
+  batch + at most 20 detail fetches (one per vulnerability
+  found); deps.dev at most 10. Activity + supply chain cached 45
+  min.
+- Gates: typecheck/lint pass, 221/221 unit tests (23 files), build 908.50 kB.
+  Browser verification `tests/browser/verify-v03.mjs`: verdict
+  banner in all four states, supply-chain section with seeded
+  vulnerabilities, trajectory chart + trend, popup Save/Remove
+  toggle, zero console/page errors. Regression: verify-build4/5/6
+  + verify-fixes. Live checks: OSV querybatch (lodash 4.17.20)
+  and GitHub commit_activity (react/react) against the real APIs.
+- Version 0.3.0 in package.json, constants, and wxt.config.ts.
+  Store package `dist/RepoRadar-0.3.0-chrome.zip` (manifest at ZIP
+  root).
+
 ## 0.2.1 — Owner-reported fixes — 2026-11-13
 
 - **Panel now opens.** Popup "Open analysis" and the "Analyze with

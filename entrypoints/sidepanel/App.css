@@ -569,6 +569,132 @@
   margin-right: 6px;
 }
 
+/* 0.3.0 — verdict banner. Colour is never the only signal: the
+ * label is always text, and the reasons are listed in words. */
+.verdict-card {
+  border-width: 2px;
+}
+
+.verdict-use {
+  border-color: var(--good);
+  background: var(--surface);
+}
+
+.verdict-caution {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.verdict-avoid {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+}
+
+.verdict-not-enough-data {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.verdict-label {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.verdict-use .verdict-label {
+  color: var(--good-text);
+}
+
+.verdict-caution .verdict-label {
+  color: var(--warn-text);
+}
+
+.verdict-avoid .verdict-label {
+  color: var(--bad-text);
+}
+
+.verdict-reasons {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.verdict-reason {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.verdict-reason:hover {
+  color: var(--accent-text);
+}
+
+/* 0.3.0 — supply chain */
+.vuln-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.vuln-item {
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+.vuln-item p {
+  margin: 4px 0 0;
+}
+
+.sev-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sev-critical {
+  border-color: var(--bad);
+  color: var(--bad-text);
+  background: var(--bad-bg);
+}
+
+.sev-high {
+  border-color: var(--warn);
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
+.sev-medium {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.sev-low,
+.sev-unknown {
+  color: var(--muted);
+}
+
 /* Evidence drawer */
 .drawer-backdrop {
   position: fixed;

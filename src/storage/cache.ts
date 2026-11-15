@@ -37,6 +37,11 @@ export const LANGUAGES_TTL_MS = 45 * 60 * 1000;
  *  inside the spec's 30–60 min range for activity/release data. */
 export const ACTIVITY_TTL_MS = 45 * 60 * 1000;
 
+/** Supply-chain data (manifests + OSV + deps.dev) moves at the
+ *  same pace as activity: 45 min. The 52-week commit activity
+ *  rides inside the activity cache entry. */
+export const SUPPLY_CHAIN_TTL_MS = 45 * 60 * 1000;
+
 export function cacheKeyForRepo(platform: string, owner: string, repo: string): string {
   return `reporadar:cache:v1:${platform}:${owner}/${repo}:repo`;
 }
@@ -47,6 +52,10 @@ export function cacheKeyForLanguages(platform: string, owner: string, repo: stri
 
 export function cacheKeyForActivity(platform: string, owner: string, repo: string): string {
   return `reporadar:cache:v1:${platform}:${owner}/${repo}:activity`;
+}
+
+export function cacheKeyForSupplyChain(platform: string, owner: string, repo: string): string {
+  return `reporadar:cache:v1:${platform}:${owner}/${repo}:supplychain`;
 }
 
 function isStale(fetchedAt: string, ttlMs: number, nowMs = Date.now()): boolean {
